@@ -6448,12 +6448,46 @@ void dump_vmcs(struct kvm_vcpu *vcpu)
  * The guest has exited.  See if we can fix it or if we need userspace
  * assistance.
  */
-static int __vmx_handle_exit(struct kvm_vcpu *vcpu, fastpath_t exit_fastpath)
-{
-	struct vcpu_vmx *vmx = to_vmx(vcpu);
-	union vmx_exit_reason exit_reason = vmx->exit_reason;
-	u32 vectoring_info = vmx->idt_vectoring_info;
-	u16 exit_handler_index;
+/* Add global counters at the top of the file */
+static unsigned long long kvm_exit_counters[256] = {0}; // Array for per-exit-type counters
+static unsigned long long kvm_total_exits = 0;         // Global total exit counter
+
+/* Add a helper function for human-readable exit reason names */
+static const char *kvm_exit_reason_to_string(int reason) {
+    switch (reason) {
+    case 0: return "EXCEPTION_NMI";
+    case 1: return "EXTERNAL_INTERRUPT";
+    case 2: return "TRIPLE_FAULT";
+    case 9: return "CPUID";
+    case 28: return "HLT";
+    case 30: return "MSR_WRITE";
+    case 48: return "EPT_MISCONFIG";
+    default: return "UNKNOWN_EXIT";
+    }
+}
+
+/* Modify the __vmx_handle_exit function */
+static int __vmx_handle_exit(struct kvm_vcpu *vcpu, fastpath_t exit_fastpath) {
+    struct vcpu_vmx *vmx = to_vmx(vcpu);
+    union vmx_exit_reason exit_reason = vmx->exit_reason;
+    u32 vectoring_info = vmx->idt_vectoring_info;
+    u16 exit_handler_index;
+
+    /* Add the counters at the start of the function */
+    int exit_type = exit_reason.basic; // Get the exit type number
+    kvm_exit_counters[exit_type]++;
+    kvm_total_exits++;
+
+    /* Print every 10,000 total exits */
+    if (kvm_total_exits % 10000 == 0) {
+        int i;
+        for (i = 0; i < 256; i++) {
+            if (kvm_exit_counters[i] > 0) {
+                printk(KERN_INFO "KVM Exit: %d (%s) occurred %llu times\n",
+                       i, kvm_exit_reason_to_string(i), kvm_exit_counters[i]);
+            }
+        }
+    }
 
 	/*
 	 * Flush logged GPAs PML buffer, this will make dirty_bitmap more
